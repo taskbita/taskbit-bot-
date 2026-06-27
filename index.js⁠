@@ -1,0 +1,89 @@
+const { Telegraf, Markup } = require('telegraf');
+const { createClient } = require('@supabase/supabase-js');
+const express = require('express');
+
+// 1. Setup Environment Variables & Configurations
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const ADMIN_ID = parseInt(process.env.ADMIN_ID || "0");
+const WEBAPP_URL = process.env.WEBAPP_URL || ""; 
+
+const bot = new Telegraf(BOT_TOKEN);
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+// 2. Helper Functions for Database Interaction
+async function getOrCreateUser(tgUser) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('telegram_id', tgUser.id)
+    .single();
+
+  if (error && error.code === 'PGRST116') {
+    const { data: newUser, error: createError } = await supabase
+      .from('users')
+      .insert([{ 
+        telegram_id: tgUser.id, 
+        username: tgUser.username || '', 
+        first_name: tgUser.first_name || '', 
+        points: 0 
+      }])
+      .select()
+      .single();
+    return newUser;
+  }
+  return data;
+}
+
+// 3. User Bot Interface Command Logic
+bot.start(async (ctx) => {
+  const user = await getOrCreateUser(ctx.from);
+  const welcomeText = `👋 Welcome to TaskBit, ${ctx.from.first_name}!\n\n` +
+                      `💰 Your Balance: *${user ? user.points : 0} Points*\n\n` +
+                      `Complete quick micro-tasks inside our mini-app to instantly earn point rewards.`;
+  
+  return ctx.replyWithMarkdown(welcomeText, Markup.inlineKeyboard([
+    [Markup.button.webApp('🚀 Open TaskBit App', WEBAPP_URL)],
+    [Markup.button.callback('📊 Check My Points', 'check_points')]
+  ]));
+});
+
+bot.action('check_points', async (ctx) => {
+  const user = await getOrCreateUser(ctx.from);
+  await ctx.answerCbQuery();
+  return ctx.reply(`💰 Your live balance is: ${user ? user.points : 0} Points.`);
+});
+
+// 4. Admin Command Logic (Task Distribution Control)
+bot.command('addtask', async (ctx) => {
+  if (ctx.from.id !== ADMIN_ID) return ctx.reply("❌ Unauthorized access.");
+  
+  const args = ctx.message.text.split(' ').slice(1).join(' ');
+  const parts = args.split('|');
+  
+  if (parts.length < 3) {
+    return ctx.reply("💡 Format:\n/addtask Title | RewardPoints | URL");
+  }
+  
+  const title = parts[0].trim();
+  const reward = parseInt(parts[1].trim());
+  const url = parts[2].trim();
+
+  const { error } = await supabase
+    .from('tasks')
+    .insert([{ title, reward, url }]);
+
+  if (error) return ctx.reply(`❌ Database Error: ${error.message}`);
+  return ctx.reply(`✅ Successfully added task:\n📌 *${title}*\n💎 Reward: *${reward} points*`);
+});
+
+// 5. Mandatory Keep-Alive Port Bindings for Hosting
+const app = express();
+app.get('/', (req, res) => res.send('TaskBit Bot Engine is Operational.'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server monitoring live on port ${PORT}`));
+
+// Launch Bot Instance
+bot.launch();
+console.log("🚀 User Core and Admin Command Interfaces Online.");
