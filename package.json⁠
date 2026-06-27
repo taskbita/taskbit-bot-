@@ -1,0 +1,14 @@
+{
+  "name": "taskbit-bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "@supabase/supabase-js": "^2.43.4",
+    "express": "^4.19.2"
+  }
+}
